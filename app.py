@@ -9,20 +9,20 @@ from math import ceil
 from threading import Lock
 from time import monotonic
 from typing import Callable
+from urllib.parse import parse_qs
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from stalwart_client import StalwartClient, create_account_router
 
-security = HTTPBasic(auto_error=False)
 logger = logging.getLogger("email-generator")
 
 AUTH_RATE_LIMIT = 10
 AUTH_RATE_WINDOW_SECONDS = 60.0
 AUTH_FAILURE_LIMIT = 5
 AUTH_LOCKOUT_SECONDS = 300.0
+SESSION_TTL_SECONDS = 8 * 60 * 60
 
 
 class SlidingWindowRateLimiter:
@@ -314,7 +314,7 @@ def page(domain: str) -> str:
       </section>
 
       <section class="view" data-section="settings">
-        <div class="settings-grid"><div class="card setting"><p class="kicker">Access</p><h3>Password-only admin session</h3><p>This console uses HTTP Basic authentication. Rotate the admin password in the service environment when needed.</p><button class="btn secondary" data-placeholder="Admin password rotation" type="button">Password controls</button></div><div class="card setting"><p class="kicker">Connection</p><h3>Stalwart service</h3><p>Mailbox provisioning and account management are connected through the protected REST API.</p><span class="tag">Connected</span></div><div class="card setting"><p class="kicker">Domain</p><h3>Default mailbox domain</h3><p>New generated addresses use the configured service domain.</p><code>__DOMAIN__</code></div><div class="card setting"><p class="kicker">Account lifecycle</p><h3>Management controls</h3><p>Edit details, apply quotas, reset passwords, and remove accounts from the mailbox directory.</p><span class="tag">REST enabled</span></div></div>
+        <div class="settings-grid"><div class="card setting"><p class="kicker">Access</p><h3>Password-only admin session</h3><p>This console uses a secure, expiring session cookie. Rotate the admin password in the service environment when needed.</p><button class="btn secondary" data-placeholder="Admin password rotation" type="button">Password controls</button></div><div class="card setting"><p class="kicker">Connection</p><h3>Stalwart service</h3><p>Mailbox provisioning and account management are connected through the protected REST API.</p><span class="tag">Connected</span></div><div class="card setting"><p class="kicker">Domain</p><h3>Default mailbox domain</h3><p>New generated addresses use the configured service domain.</p><code>__DOMAIN__</code></div><div class="card setting"><p class="kicker">Account lifecycle</p><h3>Management controls</h3><p>Edit details, apply quotas, reset passwords, and remove accounts from the mailbox directory.</p><span class="tag">REST enabled</span></div></div>
       </section>
     </main>
   </div>
@@ -368,6 +368,13 @@ def page(domain: str) -> str:
     return template.replace("__DOMAIN__", html.escape(domain))
 
 
+def login_page(error: str = "") -> str:
+    message = f'<p class="error" role="alert">{html.escape(error)}</p>' if error else ""
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ICR Mail · Sign in</title><style>
+    :root{{color-scheme:dark}}*{{box-sizing:border-box}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 50% -10%,#293b68 0,transparent 45%),#0b1220;color:#e8edf7;font:15px system-ui,sans-serif}}main{{width:min(420px,calc(100% - 32px));padding:34px;border:1px solid #263552;border-radius:22px;background:rgba(19,30,51,.86);box-shadow:0 25px 80px #0006}}h1{{margin:0 0 8px;font-size:27px;letter-spacing:-.04em}}p{{color:#8995aa;margin:0 0 25px}}label{{display:block;margin:0 0 9px;color:#c8d1e3;font-size:12px;font-weight:700}}input{{width:100%;height:46px;padding:0 14px;border:1px solid #32415d;border-radius:11px;outline:0;color:#fff;background:#0d1729;font:inherit}}input:focus{{border-color:#8b7cff;box-shadow:0 0 0 3px #8b7cff26}}button{{width:100%;height:46px;margin-top:17px;border:0;border-radius:11px;color:#fff;background:#8b7cff;font-weight:700;cursor:pointer}}.error{{margin:-8px 0 18px;padding:10px 12px;border:1px solid #9f4155;border-radius:9px;color:#ff9aae;background:#4a1f2d;font-size:13px}}
+    </style></head><body><main><h1>ICR Mail</h1><p>Sign in to the mailbox operations console.</p>{message}<form method="post" action="/login"><label for="password">Admin password</label><input id="password" name="password" type="password" autocomplete="current-password" required autofocus><button type="submit">Sign in</button></form></main></body></html>'''
+
+
 def create_app(config: Config | None = None) -> FastAPI:
     config = config or load_config()
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -387,30 +394,69 @@ def create_app(config: Config | None = None) -> FastAPI:
         response.headers.setdefault("X-Frame-Options", "DENY")
         return response
 
-    def require_admin(request: Request, credentials: HTTPBasicCredentials | None = Depends(security)) -> None:
+    sessions: dict[str, float] = {}
+    sessions_lock = Lock()
+
+    def require_admin(request: Request) -> None:
         ip = request.client.host if request.client else "unknown"
         allowed, retry_after = rate_limiter.allow(ip)
         if not allowed:
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="authentication_rate_limited", headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"})
-        if credentials is None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="authentication_required", headers={"WWW-Authenticate": "Basic", "Cache-Control": "no-store"})
-        username = credentials.username if credentials else ""
-        lockout_key = f"{ip}\x00{username}"
+        token = request.cookies.get("icr_admin_session", "")
+        now = monotonic()
+        with sessions_lock:
+            valid_session = bool(token and sessions.get(token, 0) > now)
+            if token and not valid_session:
+                sessions.pop(token, None)
+        if valid_session:
+            return
+        lockout_key = ip
         retry_after = failed_auth.retry_after(lockout_key)
         if retry_after:
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="authentication_temporarily_unavailable", headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"})
-        valid = credentials and secrets.compare_digest(credentials.username, config.admin_username) and secrets.compare_digest(credentials.password, config.admin_password)
-        if not valid:
-            retry_after = failed_auth.record_failure(lockout_key)
-            headers = {"WWW-Authenticate": "Basic", "Cache-Control": "no-store"}
-            if retry_after:
-                headers.update({"Retry-After": str(retry_after)})
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="authentication_required", headers=headers)
-        failed_auth.clear(lockout_key)
+        if request.url.path.startswith("/api/"):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="authentication_required", headers={"Cache-Control": "no-store"})
+        raise HTTPException(status_code=status.HTTP_307_TEMPORARY_REDIRECT, headers={"Location": "/login", "Cache-Control": "no-store"})
 
     @app.get("/health")
     async def health() -> JSONResponse:
         return JSONResponse({"status": "ok", "configured": config.configured}, headers={"Cache-Control": "no-store"})
+
+    @app.get("/login", response_class=HTMLResponse)
+    async def login() -> HTMLResponse:
+        return HTMLResponse(login_page(), headers={"Cache-Control": "no-store"})
+
+    @app.post("/login")
+    async def login_submit(request: Request):
+        ip = request.client.host if request.client else "unknown"
+        allowed, retry_after = rate_limiter.allow(ip)
+        if not allowed:
+            return HTMLResponse(login_page(f"Too many attempts. Try again in {retry_after} seconds."), status_code=429, headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"})
+        lockout_key = ip
+        retry_after = failed_auth.retry_after(lockout_key)
+        if retry_after:
+            return HTMLResponse(login_page(f"Sign-in temporarily locked. Try again in {retry_after} seconds."), status_code=429, headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"})
+        fields = parse_qs((await request.body()).decode("utf-8"), keep_blank_values=True)
+        password = fields.get("password", [""])[0]
+        if not secrets.compare_digest(password, config.admin_password):
+            retry_after = failed_auth.record_failure(lockout_key)
+            return HTMLResponse(login_page("Incorrect password."), status_code=429 if retry_after else 401, headers={"Retry-After": str(retry_after)} if retry_after else {})
+        failed_auth.clear(lockout_key)
+        token = secrets.token_urlsafe(32)
+        with sessions_lock:
+            sessions[token] = monotonic() + SESSION_TTL_SECONDS
+        response = RedirectResponse("/", status_code=status.HTTP_303_SEE_OTHER)
+        response.set_cookie("icr_admin_session", token, max_age=SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="strict", path="/")
+        return response
+
+    @app.post("/logout")
+    async def logout(request: Request):
+        token = request.cookies.get("icr_admin_session", "")
+        with sessions_lock:
+            sessions.pop(token, None)
+        response = RedirectResponse("/login", status_code=status.HTTP_303_SEE_OTHER)
+        response.delete_cookie("icr_admin_session", path="/")
+        return response
 
     @app.get("/", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
     async def home() -> HTMLResponse:

@@ -8,7 +8,7 @@ from app import Config, FailedAuthLockout, SlidingWindowRateLimiter, create_app,
 class MailboxGeneratorTest(unittest.TestCase):
     def setUp(self) -> None:
         self.config = Config("admin", "password", "example.test", "domain", "https://mail.example.test/jmap/", "token", "https://admin.example.test")
-        self.client = TestClient(create_app(self.config))
+        self.client = TestClient(create_app(self.config), base_url="https://testserver")
 
     def test_random_mailbox_has_expected_shape(self) -> None:
         name, password = new_mailbox()
@@ -16,13 +16,25 @@ class MailboxGeneratorTest(unittest.TestCase):
         self.assertRegex(password, r"^[A-Za-z0-9_-]{32}$")
 
     def test_post_requires_matching_origin(self) -> None:
-        response = self.client.post("/api/mailboxes", auth=("admin", "password"), headers={"Origin": "https://wrong.example.test"})
+        self.client.post("/login", data={"password": "password"})
+        response = self.client.post("/api/mailboxes", headers={"Origin": "https://wrong.example.test"})
         self.assertEqual(response.status_code, 403)
 
-    def test_missing_credentials_returns_basic_auth_challenge(self) -> None:
-        response = self.client.get("/")
+    def test_missing_credentials_redirects_to_password_login(self) -> None:
+        response = self.client.get("/", follow_redirects=False)
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(response.headers["location"], "/login")
+
+    def test_password_login_sets_secure_session_cookie(self) -> None:
+        response = self.client.post("/login", data={"password": "password"}, follow_redirects=False)
+        self.assertEqual(response.status_code, 303)
+        self.assertIn("icr_admin_session=", response.headers["set-cookie"])
+        self.assertIn("HttpOnly", response.headers["set-cookie"])
+        self.assertIn("Secure", response.headers["set-cookie"])
+
+    def test_api_requires_password_session(self) -> None:
+        response = self.client.get("/api/accounts")
         self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.headers["WWW-Authenticate"], "Basic")
         self.assertEqual(response.json()["detail"], "authentication_required")
 
     def test_security_headers_are_present(self) -> None:
@@ -33,7 +45,7 @@ class MailboxGeneratorTest(unittest.TestCase):
 
     def test_auth_requests_are_rate_limited_per_ip(self) -> None:
         for _ in range(10):
-            self.assertEqual(self.client.get("/", auth=("admin", "password")).status_code, 200)
+            self.assertEqual(self.client.post("/login", data={"password": "password"}, follow_redirects=False).status_code, 303)
         response = self.client.get("/", auth=("admin", "password"))
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.json()["detail"], "authentication_rate_limited")
@@ -41,10 +53,10 @@ class MailboxGeneratorTest(unittest.TestCase):
 
     def test_failed_auth_is_locked_out_without_leaking_credentials(self) -> None:
         for _ in range(5):
-            response = self.client.get("/", auth=("admin", "wrong-password"))
-        self.assertEqual(response.status_code, 401)
+            response = self.client.post("/login", data={"password": "wrong-password"})
+        self.assertEqual(response.status_code, 429)
         self.assertIn("Retry-After", response.headers)
-        locked = self.client.get("/", auth=("admin", "wrong-password"))
+        locked = self.client.post("/login", data={"password": "wrong-password"})
         self.assertEqual(locked.status_code, 429)
         self.assertNotIn("wrong-password", locked.text)
         self.assertNotIn("token", locked.text)
