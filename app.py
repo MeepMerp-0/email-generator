@@ -54,7 +54,7 @@ async def provision(config: Config) -> dict[str, str]:
         "methodCalls": [["x:Account/set", {"create": {"mailbox": {
             "@type": "User", "name": name, "domainId": config.domain_id,
             "aliases": {},
-            "credentials": [{"@type": "Password", "secret": password, "allowedIps": []}],
+            "credentials": {"0": {"@type": "Password", "secret": password, "allowedIps": {}}},
             "encryptionAtRest": {"@type": "Disabled"}, "memberGroupIds": {},
             "permissions": {"@type": "Inherit"}, "quotas": {}, "roles": {"@type": "User"},
         }}}, "mailbox-create"]],
