@@ -392,6 +392,8 @@ def create_app(config: Config | None = None) -> FastAPI:
         allowed, retry_after = rate_limiter.allow(ip)
         if not allowed:
             raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="authentication_rate_limited", headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"})
+        if credentials is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="authentication_required", headers={"WWW-Authenticate": "Basic", "Cache-Control": "no-store"})
         username = credentials.username if credentials else ""
         lockout_key = f"{ip}\x00{username}"
         retry_after = failed_auth.retry_after(lockout_key)

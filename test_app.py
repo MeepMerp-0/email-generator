@@ -19,6 +19,12 @@ class MailboxGeneratorTest(unittest.TestCase):
         response = self.client.post("/api/mailboxes", auth=("admin", "password"), headers={"Origin": "https://wrong.example.test"})
         self.assertEqual(response.status_code, 403)
 
+    def test_missing_credentials_returns_basic_auth_challenge(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.headers["WWW-Authenticate"], "Basic")
+        self.assertEqual(response.json()["detail"], "authentication_required")
+
     def test_security_headers_are_present(self) -> None:
         response = self.client.get("/health")
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
