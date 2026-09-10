@@ -333,9 +333,19 @@ def page(domain: str) -> str:
       document.querySelectorAll('.view').forEach((view) => view.classList.toggle('active', view.dataset.section === item.dataset.view));
     }));
     document.querySelectorAll('[data-placeholder]').forEach((button) => button.addEventListener('click', () => showToast(`${button.dataset.placeholder} will activate when its REST endpoint is available.`)));
-    document.querySelector('#search').addEventListener('input', (event) => {
-      if (event.target.value) showToast('Search is ready for the mailbox listing endpoint.');
-    });
+    const mailboxList = document.querySelector('#mailbox-list');
+    const safe = (value) => String(value ?? '—').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const accountRows = (accounts) => accounts.map((account) => `<tr><td><strong>${safe(account.emailAddress || account.name)}</strong><br><small style="color:var(--muted)">${safe(account.description || 'No description')}</small></td><td><span class="tag">Active</span></td><td>${account.quotas?.maxDiskQuota ? Math.round(account.quotas.maxDiskQuota / 1048576) + ' MB' : 'Default'}</td><td>${account.createdAt ? safe(new Date(account.createdAt).toLocaleDateString()) : '—'}</td><td><button class="copy" type="button" data-placeholder="Account editing">Manage</button></td></tr>`).join('');
+    async function loadAccounts(search = '') {
+      try {
+        const response = await fetch('/api/accounts?search=' + encodeURIComponent(search), { credentials: 'same-origin' });
+        if (!response.ok) throw new Error('Account directory unavailable');
+        const accounts = await response.json();
+        mailboxList.innerHTML = accounts.length ? accountRows(accounts) : '<tr><td colspan="5"><div class="empty"><strong>No mailboxes found</strong>Try a different search.</div></td></tr>';
+      } catch (error) { showToast(error.message); }
+    }
+    document.querySelector('#search').addEventListener('input', (event) => loadAccounts(event.target.value));
+    document.querySelector('[data-view="mailboxes"]').addEventListener('click', () => loadAccounts());
     document.querySelectorAll('.create').forEach((button) => button.addEventListener('click', async () => {
       if (!button.closest('[data-section="dashboard"]')) document.querySelector('.nav-item[data-view="dashboard"]').click();
       const result = document.querySelector('.result');
