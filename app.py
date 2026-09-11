@@ -3,6 +3,7 @@ import html
 import logging
 import os
 import secrets
+import re
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from math import ceil
@@ -115,10 +116,13 @@ def new_mailbox() -> tuple[str, str]:
     return f"icr-{secrets.token_hex(6)}", base64.urlsafe_b64encode(secrets.token_bytes(24)).rstrip(b"=").decode()
 
 
-async def provision(config: Config) -> dict[str, str]:
+async def provision(config: Config, requested_name: str = "") -> dict[str, str]:
     if not config.configured:
         raise RuntimeError("service_not_configured")
-    name, password = new_mailbox()
+    name = requested_name.strip().lower() or new_mailbox()[0]
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?", name):
+        raise ValueError("invalid_mailbox_name")
+    password = new_mailbox()[1]
     payload = {
         "using": ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"],
         "methodCalls": [["x:Account/set", {"create": {"mailbox": {
@@ -201,6 +205,8 @@ def page(domain: str) -> str:
     .hero-card::after { position: absolute; right: -40px; bottom: -95px; width: 300px; height: 300px; border: 1px solid rgba(94, 234, 212, .18); border-radius: 50%; box-shadow: 0 0 0 32px rgba(94, 234, 212, .04), 0 0 0 64px rgba(94, 234, 212, .03); content: ""; }
     .hero-card h2 { max-width: 490px; margin-bottom: 10px; font-size: clamp(21px, 2.5vw, 29px); line-height: 1.16; letter-spacing: -.035em; }
     .hero-card p { max-width: 520px; margin-bottom: 24px; color: #b7c1d4; }
+    .mailbox-name { width: min(100%, 360px); height: 41px; margin-bottom: 12px; padding: 0 13px; border: 1px solid var(--line); border-radius: 10px; outline: 0; color: var(--ink); background: rgba(255, 255, 255, .04); }
+    .mailbox-name:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(139, 124, 255, .14); }
     .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 41px; padding: 0 16px; border: 1px solid transparent; border-radius: 10px; color: #fff; background: var(--accent); font-weight: 700; transition: transform .2s, background .2s; }
     .btn:hover { transform: translateY(-1px); background: #9b8eff; }
     .btn.secondary { border-color: var(--line); color: var(--ink); background: rgba(255, 255, 255, .04); }
@@ -294,7 +300,7 @@ def page(domain: str) -> str:
 
       <section class="view active" data-section="dashboard">
         <div class="hero">
-          <div class="card hero-card"><p class="kicker">Provisioning</p><h2>Give every conversation a proper home.</h2><p>Create a unique mailbox with a strong, one-time password in seconds.</p><button class="btn create" type="button"><span>＋</span> Create mailbox</button><div class="result" aria-live="polite"></div></div>
+          <div class="card hero-card"><p class="kicker">Provisioning</p><h2>Give every conversation a proper home.</h2><p>Create a mailbox with your chosen address or leave it blank for a generated one.</p><label for="mailbox-name" class="sr-only">Mailbox name</label><input id="mailbox-name" class="mailbox-name" placeholder="name (optional)" autocomplete="off" maxlength="64"><button class="btn create" type="button"><span>＋</span> Create mailbox</button><div class="result" aria-live="polite"></div></div>
           <div class="card status-card"><div class="status-head"><h3>Service status</h3><span class="pulse" aria-label="Operational"></span></div><strong>Provisioning ready</strong><span>Connected to the admin service</span><hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><span>Default domain</span><strong style="font-size:14px;margin-top:5px;overflow-wrap:anywhere">__DOMAIN__</strong></div>
         </div>
         <div class="metrics">
@@ -352,8 +358,9 @@ def page(domain: str) -> str:
       document.querySelectorAll('.create').forEach((item) => { item.disabled = true; });
       result.classList.add('show');
       result.textContent = 'Creating mailbox…';
-      try {
-        const response = await fetch('/api/mailboxes', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' } });
+        try {
+        const requestedName = document.querySelector('#mailbox-name').value.trim();
+        const response = await fetch('/api/mailboxes', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ name: requestedName }) });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || 'Unable to create mailbox.');
         result.innerHTML = `<p>Save these credentials now. The password is not stored here.</p><div class="credential"><span>${data.email}</span><button class="copy" data-copy="${data.email}" type="button">Copy</button></div><div class="credential"><span>${data.password}</span><button class="copy" data-copy="${data.password}" type="button">Copy</button></div>`;
@@ -467,7 +474,11 @@ def create_app(config: Config | None = None) -> FastAPI:
         if request.headers.get("origin") != config.public_origin:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="origin_not_allowed")
         try:
-            created = await provision(config)
+            payload = await request.json()
+            requested_name = str(payload.get("name", "")) if isinstance(payload, dict) else ""
+            created = await provision(config, requested_name)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid_mailbox_name") from None
         except Exception:
             logger.error("Mailbox provisioning failed")
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="mailbox_creation_failed") from None
