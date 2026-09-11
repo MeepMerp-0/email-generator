@@ -268,6 +268,20 @@ def page(domain: str) -> str:
     code { padding: 3px 6px; border-radius: 5px; color: #c8c2ff; background: rgba(139, 124, 255, .12); font-size: 11px; }
     .toast { position: fixed; right: 22px; bottom: 22px; z-index: 4; max-width: min(370px, calc(100vw - 44px)); padding: 13px 16px; border: 1px solid rgba(94, 234, 212, .25); border-radius: 11px; color: var(--ink); background: #172641; box-shadow: 0 14px 35px rgba(0, 0, 0, .3); opacity: 0; pointer-events: none; transform: translateY(10px); transition: .2s ease; }
     .toast.show { opacity: 1; transform: translateY(0); }
+    [hidden] { display: none !important; }
+    .modal-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: rgba(2, 7, 18, .72); backdrop-filter: blur(8px); }
+    .modal-card { width: min(440px, 100%); padding: 24px; border: 1px solid rgba(148, 163, 184, .22); border-radius: 18px; background: #14213a; box-shadow: 0 25px 80px rgba(0, 0, 0, .5); }
+    .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+    .modal-head h2 { margin: 0; font-size: 18px; }
+    .modal-close { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: transparent; font-size: 20px; line-height: 1; }
+    .modal-close:hover { color: var(--ink); background: rgba(255,255,255,.06); }
+    .modal-label { display: block; margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 700; }
+    .modal-input { width: 100%; height: 43px; padding: 0 12px; border: 1px solid var(--line); border-radius: 9px; outline: 0; color: var(--ink); background: rgba(255,255,255,.05); }
+    .modal-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(139,124,255,.14); }
+    .modal-help { margin: 8px 0 0; color: var(--muted); font-size: 11px; }
+    .modal-error { margin: 14px 0 0; color: var(--danger); font-size: 12px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 22px; }
+    .modal-actions .btn { min-width: 100px; }
     .result { display: none; margin-top: 16px; padding: 15px; border: 1px solid rgba(94, 234, 212, .2); border-radius: 12px; background: rgba(3, 12, 27, .4); }
     .result.show { display: block; }
     .result p { margin-bottom: 9px; color: var(--muted); font-size: 11px; }
@@ -326,6 +340,7 @@ def page(domain: str) -> str:
     </main>
   </div>
   <div class="toast" role="status" aria-live="polite"></div>
+  <div id="manager-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="manager-title" hidden><div class="modal-card"><div class="modal-head"><h2 id="manager-title">Manage mailbox</h2><button id="manager-close" class="modal-close" type="button" aria-label="Close">×</button></div><form id="manager-form"><div id="manager-fields"></div><p id="manager-error" class="modal-error" role="alert" hidden></p><div class="modal-actions"><button id="manager-cancel" class="btn secondary" type="button">Cancel</button><button id="manager-submit" class="btn" type="submit">Save changes</button></div></form></div></div>
   <script>
     const toast = document.querySelector('.toast');
     let toastTimer;
@@ -341,6 +356,14 @@ def page(domain: str) -> str:
     }));
     document.querySelectorAll('[data-placeholder]').forEach((button) => button.addEventListener('click', () => showToast(`${button.dataset.placeholder} will activate when its REST endpoint is available.`)));
     const mailboxList = document.querySelector('#mailbox-list');
+    const managerModal = document.querySelector('#manager-modal');
+    const managerForm = document.querySelector('#manager-form');
+    const managerFields = document.querySelector('#manager-fields');
+    const managerError = document.querySelector('#manager-error');
+    const managerTitle = document.querySelector('#manager-title');
+    const managerSubmit = document.querySelector('#manager-submit');
+    let selectedAccount;
+    let accountsById = new Map();
     const safe = (value) => String(value ?? '—').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const accountRows = (accounts) => accounts.map((account) => `<tr><td><strong>${safe(account.emailAddress || account.name)}</strong><br><small style="color:var(--muted)">${safe(account.description || 'No description')}</small></td><td><span class="tag">Active</span></td><td>${account.quotas?.maxDiskQuota ? Math.round(account.quotas.maxDiskQuota / 1048576) + ' MB' : 'Default'}</td><td>${account.createdAt ? safe(new Date(account.createdAt).toLocaleDateString()) : '—'}</td><td><div class="row-actions"><button class="table-action manage-account" data-action="edit" data-id="${safe(account.id)}" type="button">Edit</button><button class="table-action manage-account" data-action="quota" data-id="${safe(account.id)}" type="button">Quota</button><button class="table-action manage-account" data-action="password" data-id="${safe(account.id)}" type="button">Password</button><button class="table-action manage-account" data-action="delete" data-id="${safe(account.id)}" type="button">Delete</button></div></td></tr>`).join('');
     async function loadAccounts(search = '') {
@@ -348,17 +371,48 @@ def page(domain: str) -> str:
         const response = await fetch('/api/accounts?search=' + encodeURIComponent(search), { credentials: 'same-origin' });
         if (!response.ok) throw new Error('Account directory unavailable');
         const accounts = await response.json();
+        accountsById = new Map(accounts.map((account) => [account.id, account]));
         mailboxList.innerHTML = accounts.length ? accountRows(accounts) : '<tr><td colspan="5"><div class="empty"><strong>No mailboxes found</strong>Try a different search.</div></td></tr>';
       } catch (error) { showToast(error.message); }
     }
     document.querySelector('#search').addEventListener('input', (event) => loadAccounts(event.target.value));
     document.querySelector('[data-view="mailboxes"]').addEventListener('click', () => loadAccounts());
     document.querySelectorAll('.account-action').forEach((button) => button.addEventListener('click', () => { document.querySelector('[data-view="mailboxes"]').click(); showToast('Choose an account action from the mailbox directory.'); }));
+    function closeManager() { managerModal.hidden = true; managerForm.reset(); selectedAccount = null; }
+    function openManager(action, id) {
+      selectedAccount = accountsById.get(id);
+      if (!selectedAccount) return;
+      managerTitle.textContent = action === 'delete' ? 'Delete mailbox' : action === 'password' ? 'Change mailbox password' : action === 'quota' ? 'Storage quota' : 'Edit mailbox';
+      managerSubmit.textContent = action === 'delete' ? 'Delete mailbox' : action === 'password' ? 'Change password' : 'Save changes';
+      managerSubmit.classList.toggle('danger', action === 'delete');
+      managerFields.innerHTML = action === 'edit' ? `<label class="modal-label" for="manager-description">Description</label><input id="manager-description" class="modal-input" value="${safe(selectedAccount.description || '')}" maxlength="200"><p class="modal-help">Shown in the mailbox directory.</p>` : action === 'quota' ? `<label class="modal-label" for="manager-quota">Storage limit (MB)</label><input id="manager-quota" class="modal-input" type="number" min="0" step="1" value="${selectedAccount.quotas?.maxDiskQuota ? Math.round(selectedAccount.quotas.maxDiskQuota / 1048576) : ''}"><p class="modal-help">Leave blank or enter 0 to use the default quota.</p>` : action === 'password' ? `<label class="modal-label" for="manager-password">New password</label><input id="manager-password" class="modal-input" type="password" minlength="12" autocomplete="new-password" required><p class="modal-help">Use at least 12 characters. The password will not be shown again.</p>` : `<p>Delete <strong>${safe(selectedAccount.emailAddress || selectedAccount.name)}</strong>? This permanently removes the account and its mailbox.</p><label class="modal-label" for="manager-confirm">Re-enter the full email address to confirm</label><input id="manager-confirm" class="modal-input" type="email" placeholder="${safe(selectedAccount.emailAddress || selectedAccount.name)}" autocomplete="off" required>`;
+      managerError.hidden = true;
+      managerModal.hidden = false;
+      (managerFields.querySelector('input') || managerSubmit).focus();
+    }
+    document.querySelector('#manager-close').addEventListener('click', closeManager);
+    document.querySelector('#manager-cancel').addEventListener('click', closeManager);
+    managerModal.addEventListener('click', (event) => { if (event.target === managerModal) closeManager(); });
+    managerForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const action = managerSubmit.textContent === 'Delete mailbox' ? 'delete' : managerSubmit.textContent === 'Change password' ? 'password' : managerFields.querySelector('#manager-quota') ? 'quota' : 'edit';
+      const id = selectedAccount.id;
+      let endpoint = '/api/accounts/' + encodeURIComponent(id), options = { credentials: 'same-origin' };
+      if (action === 'delete') { if (managerFields.querySelector('#manager-confirm').value.trim().toLowerCase() !== (selectedAccount.emailAddress || selectedAccount.name).toLowerCase()) { managerError.textContent = 'Enter the exact mailbox email address to confirm.'; managerError.hidden = false; return; } options.method = 'DELETE'; }
+      if (action === 'edit') { options.method = 'PATCH'; options.headers = {'Content-Type':'application/json'}; options.body = JSON.stringify({description: managerFields.querySelector('#manager-description').value}); }
+      if (action === 'quota') { const value = Number(managerFields.querySelector('#manager-quota').value || 0); if (!Number.isInteger(value) || value < 0) { managerError.textContent = 'Enter a valid non-negative whole number.'; managerError.hidden = false; return; } options.method = 'PATCH'; options.headers = {'Content-Type':'application/json'}; options.body = JSON.stringify({quotas: value ? {maxDiskQuota: value * 1048576} : {}}); }
+      if (action === 'password') { options.method = 'POST'; options.headers = {'Content-Type':'application/json'}; options.body = JSON.stringify({new_password: managerFields.querySelector('#manager-password').value}); }
+      managerSubmit.disabled = true;
+      try { const response = await fetch(action === 'password' ? endpoint + '/password' : endpoint, options); if (!response.ok) throw new Error('The mailbox operation failed.'); closeManager(); await loadAccounts(document.querySelector('#search').value); showToast(action === 'delete' ? 'Mailbox deleted.' : action === 'password' ? 'Password changed.' : 'Mailbox updated.'); } catch (error) { managerError.textContent = error.message; managerError.hidden = false; } finally { managerSubmit.disabled = false; }
+    });
     mailboxList.addEventListener('click', async (event) => {
       const button = event.target.closest('.manage-account');
       if (!button) return;
       const id = button.dataset.id;
       const action = button.dataset.action;
+      openManager(action, id);
+      return;
+      /* legacy prompt flow intentionally unreachable */
       try {
         if (action === 'delete') {
           if (!window.confirm('Delete this mailbox permanently?')) return;
