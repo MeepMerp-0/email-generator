@@ -96,7 +96,7 @@ class Config:
 
     @property
     def configured(self) -> bool:
-        return all((self.admin_username, self.admin_password, self.domain, self.domain_id, self.jmap_url, self.api_key, self.public_origin))
+        return all((self.admin_password, self.domain, self.domain_id, self.jmap_url, self.api_key, self.public_origin))
 
 
 def load_config() -> Config:
