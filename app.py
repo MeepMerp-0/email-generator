@@ -335,7 +335,7 @@ def page(domain: str) -> str:
       </section>
 
       <section class="view" data-section="settings">
-        <div class="settings-grid"><div class="card setting"><p class="kicker">Access</p><h3>Password-only admin session</h3><p>This console uses a secure, expiring session cookie. Rotate the admin password in the service environment when needed.</p><button class="btn secondary" data-placeholder="Admin password rotation" type="button">Password controls</button></div><div class="card setting"><p class="kicker">Connection</p><h3>Stalwart service</h3><p>Mailbox provisioning and account management are connected through the protected REST API.</p><span class="tag">Connected</span></div><div class="card setting"><p class="kicker">Domain</p><h3>Default mailbox domain</h3><p>New generated addresses use the configured service domain.</p><code>__DOMAIN__</code></div><div class="card setting"><p class="kicker">Account lifecycle</p><h3>Management controls</h3><p>Edit details, apply quotas, reset passwords, and remove accounts from the mailbox directory.</p><span class="tag">REST enabled</span></div></div>
+        <div class="settings-grid"><div class="card setting"><p class="kicker">Access</p><h3>Password-only admin session</h3><p>This console uses a secure, expiring session cookie. Rotate the admin password in Coolify when needed.</p><button id="logout" class="btn secondary" type="button">Log out</button></div><div class="card setting"><p class="kicker">Connection</p><h3>Stalwart service</h3><p>Mailbox provisioning and account management are connected through the protected REST API.</p><span class="tag">Connected</span></div><div class="card setting"><p class="kicker">Domain</p><h3>Default mailbox domain</h3><p>New generated addresses use the configured service domain.</p><code>__DOMAIN__</code></div><div class="card setting"><p class="kicker">Account lifecycle</p><h3>Management controls</h3><p>Mailbox email addresses are fixed after creation; display names, quotas, passwords, and deletion are managed in Mailboxes.</p><span class="tag">REST enabled</span></div></div>
       </section>
     </main>
   </div>
@@ -356,6 +356,7 @@ def page(domain: str) -> str:
     }));
     document.querySelectorAll('[data-placeholder]').forEach((button) => button.addEventListener('click', () => showToast(`${button.dataset.placeholder} will activate when its REST endpoint is available.`)));
     const mailboxList = document.querySelector('#mailbox-list');
+    const activity = document.querySelector('.activity');
     const managerModal = document.querySelector('#manager-modal');
     const managerForm = document.querySelector('#manager-form');
     const managerFields = document.querySelector('#manager-fields');
@@ -372,6 +373,16 @@ def page(domain: str) -> str:
         if (!response.ok) throw new Error('Account directory unavailable');
         const accounts = await response.json();
         accountsById = new Map(accounts.map((account) => [account.id, account]));
+        document.querySelector('#active-count').textContent = accounts.length;
+        const used = accounts.reduce((sum, account) => sum + Number(account.usedDiskQuota || 0), 0);
+        document.querySelector('#storage-used').textContent = used >= 1073741824 ? (used / 1073741824).toFixed(1) + ' GB' : Math.round(used / 1048576) + ' MB';
+        const month = new Date();
+        const newThisMonth = accounts.filter((account) => { const created = account.createdAt && new Date(account.createdAt); return created && created.getMonth() === month.getMonth() && created.getFullYear() === month.getFullYear(); }).length;
+        document.querySelector('#new-count').textContent = newThisMonth;
+        document.querySelector('#active-note').textContent = 'From Stalwart directory';
+        document.querySelector('#storage-note').textContent = 'Live account usage';
+        document.querySelector('#new-note').textContent = 'Created this month';
+        if (activity && accounts.length) activity.innerHTML = accounts.slice(0, 3).map((account) => `<div class="activity-row"><span class="activity-icon">✓</span><div><p>${safe(account.emailAddress || account.name)}</p><small>${safe(account.description || 'Mailbox account')}</small></div><time>${account.createdAt ? safe(new Date(account.createdAt).toLocaleDateString()) : '—'}</time></div>`).join('');
         mailboxList.innerHTML = accounts.length ? accountRows(accounts) : '<tr><td colspan="5"><div class="empty"><strong>No mailboxes found</strong>Try a different search.</div></td></tr>';
       } catch (error) { showToast(error.message); }
     }
@@ -385,7 +396,7 @@ def page(domain: str) -> str:
       managerTitle.textContent = action === 'delete' ? 'Delete mailbox' : action === 'password' ? 'Change mailbox password' : action === 'quota' ? 'Storage quota' : 'Edit mailbox';
       managerSubmit.textContent = action === 'delete' ? 'Delete mailbox' : action === 'password' ? 'Change password' : 'Save changes';
       managerSubmit.classList.toggle('danger', action === 'delete');
-      managerFields.innerHTML = action === 'edit' ? `<label class="modal-label" for="manager-description">Description</label><input id="manager-description" class="modal-input" value="${safe(selectedAccount.description || '')}" maxlength="200"><p class="modal-help">Shown in the mailbox directory.</p>` : action === 'quota' ? `<label class="modal-label" for="manager-quota">Storage limit (MB)</label><input id="manager-quota" class="modal-input" type="number" min="0" step="1" value="${selectedAccount.quotas?.maxDiskQuota ? Math.round(selectedAccount.quotas.maxDiskQuota / 1048576) : ''}"><p class="modal-help">Leave blank or enter 0 to use the default quota.</p>` : action === 'password' ? `<label class="modal-label" for="manager-password">New password</label><input id="manager-password" class="modal-input" type="password" minlength="12" autocomplete="new-password" required><p class="modal-help">Use at least 12 characters. The password will not be shown again.</p>` : `<p>Delete <strong>${safe(selectedAccount.emailAddress || selectedAccount.name)}</strong>? This permanently removes the account and its mailbox.</p><label class="modal-label" for="manager-confirm">Re-enter the full email address to confirm</label><input id="manager-confirm" class="modal-input" type="email" placeholder="${safe(selectedAccount.emailAddress || selectedAccount.name)}" autocomplete="off" required>`;
+      managerFields.innerHTML = action === 'edit' ? `<p class="modal-help">Address: <strong>${safe(selectedAccount.emailAddress || selectedAccount.name)}</strong></p><label class="modal-label" for="manager-description">Display name</label><input id="manager-description" class="modal-input" value="${safe(selectedAccount.description || '')}" maxlength="200"><p class="modal-help">The email address cannot be changed after creation.</p>` : action === 'quota' ? `<label class="modal-label" for="manager-quota">Storage limit (GB)</label><input id="manager-quota" class="modal-input" type="number" min="0" step="0.01" value="${selectedAccount.quotas?.maxDiskQuota ? (selectedAccount.quotas.maxDiskQuota / 1073741824).toFixed(2) : ''}"><p class="modal-help">1 GB = 1024 MB. Enter 0 or leave blank for the default quota.</p>` : action === 'password' ? `<label class="modal-label" for="manager-password">New password</label><input id="manager-password" class="modal-input" type="password" minlength="12" autocomplete="new-password" required><p class="modal-help">Use at least 12 characters. The password will not be shown again.</p>` : `<p>Delete <strong>${safe(selectedAccount.emailAddress || selectedAccount.name)}</strong>? This permanently removes the account and its mailbox.</p><label class="modal-label" for="manager-confirm">Re-enter the full email address to confirm</label><input id="manager-confirm" class="modal-input" type="email" placeholder="${safe(selectedAccount.emailAddress || selectedAccount.name)}" autocomplete="off" required>`;
       managerError.hidden = true;
       managerModal.hidden = false;
       (managerFields.querySelector('input') || managerSubmit).focus();
@@ -400,11 +411,12 @@ def page(domain: str) -> str:
       let endpoint = '/api/accounts/' + encodeURIComponent(id), options = { credentials: 'same-origin' };
       if (action === 'delete') { if (managerFields.querySelector('#manager-confirm').value.trim().toLowerCase() !== (selectedAccount.emailAddress || selectedAccount.name).toLowerCase()) { managerError.textContent = 'Enter the exact mailbox email address to confirm.'; managerError.hidden = false; return; } options.method = 'DELETE'; }
       if (action === 'edit') { options.method = 'PATCH'; options.headers = {'Content-Type':'application/json'}; options.body = JSON.stringify({description: managerFields.querySelector('#manager-description').value}); }
-      if (action === 'quota') { const value = Number(managerFields.querySelector('#manager-quota').value || 0); if (!Number.isInteger(value) || value < 0) { managerError.textContent = 'Enter a valid non-negative whole number.'; managerError.hidden = false; return; } options.method = 'PATCH'; options.headers = {'Content-Type':'application/json'}; options.body = JSON.stringify({quotas: value ? {maxDiskQuota: value * 1048576} : {}}); }
+      if (action === 'quota') { const value = Number(managerFields.querySelector('#manager-quota').value || 0); if (!Number.isFinite(value) || value < 0) { managerError.textContent = 'Enter a valid non-negative number.'; managerError.hidden = false; return; } options.method = 'PATCH'; options.headers = {'Content-Type':'application/json'}; options.body = JSON.stringify({quotas: value ? {maxDiskQuota: Math.round(value * 1073741824)} : {}}); }
       if (action === 'password') { options.method = 'POST'; options.headers = {'Content-Type':'application/json'}; options.body = JSON.stringify({new_password: managerFields.querySelector('#manager-password').value}); }
       managerSubmit.disabled = true;
       try { const response = await fetch(action === 'password' ? endpoint + '/password' : endpoint, options); if (!response.ok) throw new Error('The mailbox operation failed.'); closeManager(); await loadAccounts(document.querySelector('#search').value); showToast(action === 'delete' ? 'Mailbox deleted.' : action === 'password' ? 'Password changed.' : 'Mailbox updated.'); } catch (error) { managerError.textContent = error.message; managerError.hidden = false; } finally { managerSubmit.disabled = false; }
     });
+    document.querySelector('#logout').addEventListener('click', async () => { const button = document.querySelector('#logout'); button.disabled = true; button.textContent = 'Logging out…'; await fetch('/logout', {method:'POST', credentials:'same-origin'}); window.location.href = '/login'; });
     mailboxList.addEventListener('click', async (event) => {
       const button = event.target.closest('.manage-account');
       if (!button) return;
@@ -458,6 +470,7 @@ def page(domain: str) -> str:
       } catch (error) { result.textContent = error.message; showToast('Mailbox creation failed.'); }
       finally { document.querySelectorAll('.create').forEach((item) => { item.disabled = false; }); }
     }));
+    loadAccounts();
   </script>
 </body>
 </html>'''
