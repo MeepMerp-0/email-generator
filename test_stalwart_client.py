@@ -52,6 +52,14 @@ class StalwartClientTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(StalwartError, "jmap_forbidden"):
             await client.list_accounts()
 
+    async def test_updates_accept_stalwart_null_success_values(self) -> None:
+        def null_update(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"methodResponses": [["x:Account/set", {"updated": {"a1": None}}, "c1"]]})
+
+        client = StalwartClient("https://mail.test/api", "secret", transport=httpx.MockTransport(null_update))
+        self.assertEqual((await client.update_account("a1", description="new"))["id"], "a1")
+        self.assertEqual((await client.change_password("a1", "new"))["id"], "a1")
+
 
 class AccountRouterTest(unittest.TestCase):
     def test_router_exposes_account_management(self) -> None:

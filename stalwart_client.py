@@ -168,9 +168,9 @@ class StalwartClient:
             raise ValueError("account_update_requires_description_or_quotas")
         result = await self._call("x:Account/set", {"update": {account_id: fields}})
         updated = result.get("updated", {}).get(account_id)
-        if not isinstance(updated, dict):
+        if updated is not None and not isinstance(updated, dict):
             raise StalwartError("account_update_failed")
-        return updated
+        return updated or {"id": account_id}
 
     async def change_password(self, account_id: str, new_password: str) -> dict[str, Any]:
         if not account_id:
@@ -188,9 +188,9 @@ class StalwartClient:
             },
         )
         updated = result.get("updated", {}).get(account_id)
-        if not isinstance(updated, dict):
+        if updated is not None and not isinstance(updated, dict):
             raise StalwartError("password_change_failed")
-        return updated
+        return updated or {"id": account_id}
 
     async def delete_account(self, account_id: str) -> None:
         if not account_id:
