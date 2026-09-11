@@ -83,7 +83,7 @@ class StalwartClient:
         elif filters:
             account_filter = {"operator": "AND", "conditions": filters}
         query = await self._call("x:Account/query", {"filter": account_filter})
-        account_ids = query.get("accountIds", [])
+        account_ids = query.get("ids", query.get("accountIds", []))
         if not isinstance(account_ids, list):
             raise StalwartError("invalid_account_query_response")
         if not account_ids:

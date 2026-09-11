@@ -17,7 +17,7 @@ class StalwartClientTest(unittest.IsolatedAsyncioTestCase):
             self.requests.append(body)
             method = body["methodCalls"][0][0]
             if method == "x:Account/query":
-                return httpx.Response(200, json={"methodResponses": [[method, {"accountIds": ["a1"]}, "c1"]]})
+                return httpx.Response(200, json={"methodResponses": [[method, {"ids": ["a1"]}, "c1"]]})
             if method == "x:Account/get":
                 return httpx.Response(200, json={"methodResponses": [[method, {"list": [{"id": "a1", "name": "alice"}]}, "c1"]]})
             if method == "x:Account/set":
