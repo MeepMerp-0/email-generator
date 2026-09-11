@@ -341,7 +341,7 @@ def page(domain: str) -> str:
     document.querySelectorAll('[data-placeholder]').forEach((button) => button.addEventListener('click', () => showToast(`${button.dataset.placeholder} will activate when its REST endpoint is available.`)));
     const mailboxList = document.querySelector('#mailbox-list');
     const safe = (value) => String(value ?? '—').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-    const accountRows = (accounts) => accounts.map((account) => `<tr><td><strong>${safe(account.emailAddress || account.name)}</strong><br><small style="color:var(--muted)">${safe(account.description || 'No description')}</small></td><td><span class="tag">Active</span></td><td>${account.quotas?.maxDiskQuota ? Math.round(account.quotas.maxDiskQuota / 1048576) + ' MB' : 'Default'}</td><td>${account.createdAt ? safe(new Date(account.createdAt).toLocaleDateString()) : '—'}</td><td><button class="copy" type="button" data-placeholder="Account editing">Manage</button></td></tr>`).join('');
+    const accountRows = (accounts) => accounts.map((account) => `<tr><td><strong>${safe(account.emailAddress || account.name)}</strong><br><small style="color:var(--muted)">${safe(account.description || 'No description')}</small></td><td><span class="tag">Active</span></td><td>${account.quotas?.maxDiskQuota ? Math.round(account.quotas.maxDiskQuota / 1048576) + ' MB' : 'Default'}</td><td>${account.createdAt ? safe(new Date(account.createdAt).toLocaleDateString()) : '—'}</td><td><div class="row-actions"><button class="table-action manage-account" data-action="edit" data-id="${safe(account.id)}" type="button">Edit</button><button class="table-action manage-account" data-action="quota" data-id="${safe(account.id)}" type="button">Quota</button><button class="table-action manage-account" data-action="password" data-id="${safe(account.id)}" type="button">Password</button><button class="table-action manage-account" data-action="delete" data-id="${safe(account.id)}" type="button">Delete</button></div></td></tr>`).join('');
     async function loadAccounts(search = '') {
       try {
         const response = await fetch('/api/accounts?search=' + encodeURIComponent(search), { credentials: 'same-origin' });
@@ -352,6 +352,40 @@ def page(domain: str) -> str:
     }
     document.querySelector('#search').addEventListener('input', (event) => loadAccounts(event.target.value));
     document.querySelector('[data-view="mailboxes"]').addEventListener('click', () => loadAccounts());
+    document.querySelectorAll('.account-action').forEach((button) => button.addEventListener('click', () => { document.querySelector('[data-view="mailboxes"]').click(); showToast('Choose an account action from the mailbox directory.'); }));
+    mailboxList.addEventListener('click', async (event) => {
+      const button = event.target.closest('.manage-account');
+      if (!button) return;
+      const id = button.dataset.id;
+      const action = button.dataset.action;
+      try {
+        if (action === 'delete') {
+          if (!window.confirm('Delete this mailbox permanently?')) return;
+          const response = await fetch('/api/accounts/' + encodeURIComponent(id), { method: 'DELETE', credentials: 'same-origin' });
+          if (!response.ok) throw new Error('Unable to delete mailbox.');
+        } else if (action === 'edit') {
+          const description = window.prompt('Mailbox description (leave blank to clear):');
+          if (description === null) return;
+          const response = await fetch('/api/accounts/' + encodeURIComponent(id), { method: 'PATCH', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, body: JSON.stringify({description}) });
+          if (!response.ok) throw new Error('Unable to update mailbox.');
+        } else if (action === 'quota') {
+          const mb = window.prompt('Storage limit in MB (0 removes the limit):');
+          if (mb === null) return;
+          const value = Number(mb);
+          if (!Number.isInteger(value) || value < 0) throw new Error('Enter a non-negative whole number.');
+          const response = await fetch('/api/accounts/' + encodeURIComponent(id), { method: 'PATCH', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, body: JSON.stringify({quotas: value ? {maxDiskQuota: value * 1048576} : {}}) });
+          if (!response.ok) throw new Error('Unable to update quota.');
+        } else if (action === 'password') {
+          const password = window.prompt('Enter the new mailbox password:');
+          if (!password) return;
+          const response = await fetch('/api/accounts/' + encodeURIComponent(id) + '/password', { method: 'POST', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, body: JSON.stringify({new_password: password}) });
+          if (!response.ok) throw new Error('Unable to change password.');
+          showToast('Password changed. Save it securely; it is not shown again.');
+        }
+        await loadAccounts(document.querySelector('#search').value);
+        if (action !== 'password') showToast('Mailbox updated.');
+      } catch (error) { showToast(error.message); }
+    });
     document.querySelectorAll('.create').forEach((button) => button.addEventListener('click', async () => {
       if (!button.closest('[data-section="dashboard"]')) document.querySelector('.nav-item[data-view="dashboard"]').click();
       const result = document.querySelector('.result');
