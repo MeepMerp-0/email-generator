@@ -441,9 +441,6 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     def require_admin(request: Request) -> None:
         ip = request.client.host if request.client else "unknown"
-        allowed, retry_after = rate_limiter.allow(ip)
-        if not allowed:
-            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="authentication_rate_limited", headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"})
         token = request.cookies.get("icr_admin_session", "")
         now = monotonic()
         with sessions_lock:
@@ -452,6 +449,9 @@ def create_app(config: Config | None = None) -> FastAPI:
                 sessions.pop(token, None)
         if valid_session:
             return
+        allowed, retry_after = rate_limiter.allow(ip)
+        if not allowed:
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="authentication_rate_limited", headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"})
         lockout_key = ip
         retry_after = failed_auth.retry_after(lockout_key)
         if retry_after:

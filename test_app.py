@@ -37,6 +37,11 @@ class MailboxGeneratorTest(unittest.TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["detail"], "authentication_required")
 
+    def test_authenticated_session_is_not_throttled_by_page_requests(self) -> None:
+        self.client.post("/login", data={"password": "password"})
+        for _ in range(20):
+            self.assertNotEqual(self.client.get("/").status_code, 429)
+
     def test_security_headers_are_present(self) -> None:
         response = self.client.get("/health")
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
@@ -45,8 +50,8 @@ class MailboxGeneratorTest(unittest.TestCase):
 
     def test_auth_requests_are_rate_limited_per_ip(self) -> None:
         for _ in range(10):
-            self.assertEqual(self.client.post("/login", data={"password": "password"}, follow_redirects=False).status_code, 303)
-        response = self.client.get("/", auth=("admin", "password"))
+            self.assertEqual(self.client.get("/", follow_redirects=False).status_code, 307)
+        response = self.client.get("/", follow_redirects=False)
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.json()["detail"], "authentication_rate_limited")
         self.assertIn("Retry-After", response.headers)
