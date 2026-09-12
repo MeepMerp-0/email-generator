@@ -55,6 +55,7 @@ class MailboxGeneratorTest(unittest.TestCase):
         response = self.client.get("/api/accounts")
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["detail"], "authentication_required")
+        self.assertEqual(self.client.get("/api/dns-health").status_code, 401)
 
     def test_authenticated_session_is_not_throttled_by_page_requests(self) -> None:
         self.client.post("/login", data={"password": "password"})

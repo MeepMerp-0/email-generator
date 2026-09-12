@@ -15,6 +15,7 @@ from urllib.parse import parse_qs
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from dns_health import DEFAULT_DKIM_SELECTORS, check_dns_health
 from stalwart_client import StalwartClient, create_account_router
 
 logger = logging.getLogger("email-generator")
@@ -94,6 +95,7 @@ class Config:
     jmap_url: str = field(repr=False)
     api_key: str = field(repr=False)
     public_origin: str
+    dkim_selectors: tuple[str, ...] = DEFAULT_DKIM_SELECTORS
 
     @property
     def configured(self) -> bool:
@@ -109,6 +111,7 @@ def load_config() -> Config:
         jmap_url=os.getenv("STALWART_JMAP_URL", ""),
         api_key=os.getenv("STALWART_API_KEY", ""),
         public_origin=os.getenv("PUBLIC_ORIGIN", ""),
+        dkim_selectors=tuple(selector.strip() for selector in os.getenv("MAIL_DKIM_SELECTORS", ",".join(DEFAULT_DKIM_SELECTORS)).split(",") if selector.strip()) or DEFAULT_DKIM_SELECTORS,
     )
 
 
@@ -239,6 +242,7 @@ def page(domain: str) -> str:
     .metric-value { display: block; margin: 15px 0 4px; font-size: 25px; letter-spacing: -.05em; }
     .metric-note { color: var(--muted); font-size: 11px; }
     .metric-note.ready { color: var(--accent-2); }
+    .lower-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 18px; }
     .panel { padding: 22px; }
     .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 20px; }
     .panel h2 { margin-bottom: 4px; font-size: 16px; letter-spacing: -.02em; }
@@ -251,6 +255,16 @@ def page(domain: str) -> str:
     .activity-row p { margin: 0; font-size: 13px; }
     .activity-row small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
     .activity-row time { margin-left: auto; color: var(--muted); font-size: 11px; }
+    .dns-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .dns-row:last-child { border-bottom: 0; }
+    .dns-row strong { display: block; font-size: 12px; }
+    .dns-row small { display: block; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .dns-state { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; }
+    .dns-state::before { width: 7px; height: 7px; border-radius: 50%; background: currentColor; content: ""; }
+    .dns-state.connected { color: var(--accent-2); }
+    .dns-state.disconnected { color: var(--danger); }
+    .dns-state.unknown { color: var(--muted); }
+    .dns-note { margin: 12px 0 0; color: var(--muted); font-size: 11px; }
     .view { display: none; }
     .view.active { display: block; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }
@@ -297,7 +311,7 @@ def page(domain: str) -> str:
     .credential { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
     .credential span { overflow-wrap: anywhere; color: #fff; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
     .copy { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: transparent; font-size: 10px; }
-    @media (max-width: 1100px) { .shell { grid-template-columns: 218px minmax(0, 1fr); } .content { padding-inline: clamp(18px, 3vw, 34px); } .hero { grid-template-columns: 1fr; } .status-card { min-height: 0; } }
+    @media (max-width: 1100px) { .shell { grid-template-columns: 218px minmax(0, 1fr); } .content { padding-inline: clamp(18px, 3vw, 34px); } .hero, .lower-grid { grid-template-columns: 1fr; } .status-card { min-height: 0; } }
     @media (max-width: 760px) { .shell { display: block; } .sidebar { gap: 16px; padding: 14px; border-right: 0; border-bottom: 1px solid var(--line); } nav { display: flex; overflow-x: auto; scrollbar-width: none; } nav::-webkit-scrollbar { display: none; } .nav-item { width: auto; white-space: nowrap; } .side-note { display: none; } .content { padding: 22px 14px 38px; } .topbar { align-items: center; margin-bottom: 22px; } .topbar h1 { font-size: 26px; } .lede { font-size: 13px; } .operator span { display: none; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; } .metric { padding: 14px; } .metric-value { font-size: 21px; } .settings-grid { grid-template-columns: 1fr; } .hero-card, .panel, .status-card { padding: 20px; } .toolbar { gap: 8px; } .search { flex-basis: 100%; } .search input, #refresh-accounts { width: 100%; } .table-wrap { margin-inline: -2px; } }
     @media (max-width: 420px) { .brand { padding-inline: 4px; } .brand-mark { width: 30px; height: 30px; } .nav-item { padding: 9px 10px; font-size: 12px; } .metrics { grid-template-columns: 1fr 1fr; } .metric-label { font-size: 11px; } .metric-note { font-size: 10px; } .hero-card h2 { font-size: 22px; } .btn { width: 100%; } .panel-head { flex-direction: column; } .panel-head .btn { width: 100%; } .row-actions { flex-wrap: wrap; } }
   </style>
@@ -335,6 +349,7 @@ def page(domain: str) -> str:
         </div>
         <div class="lower-grid">
           <div class="card panel"><div class="panel-head"><div><h2>Recent mailboxes</h2><p class="panel-subtitle">Latest addresses in this workspace</p></div><button class="text-link" id="manage-mailboxes" type="button">Manage mailboxes</button></div><div class="activity" aria-live="polite"><div class="activity-row"><div><p>Loading mailboxes…</p></div></div></div></div>
+          <div class="card panel"><div class="panel-head"><div><h2>Mail DNS health</h2><p class="panel-subtitle">Published records for __DOMAIN__</p></div><button class="text-link" id="dns-refresh" type="button">Refresh</button></div><div id="dns-list" aria-live="polite">Checking DNS records…</div><p class="dns-note">DNS status does not test message delivery or inbox placement.</p></div>
         </div>
       </section>
 
@@ -363,6 +378,28 @@ def page(domain: str) -> str:
       document.querySelectorAll('.view').forEach((view) => view.classList.toggle('active', view.dataset.section === item.dataset.view));
     }));
     document.querySelector('#manage-mailboxes').addEventListener('click', () => document.querySelector('[data-view="mailboxes"]').click());
+    async function loadDnsHealth() {
+      const button = document.querySelector('#dns-refresh');
+      const list = document.querySelector('#dns-list');
+      button.disabled = true;
+      button.textContent = 'Checking…';
+      try {
+        const response = await fetch('/api/dns-health', { credentials: 'same-origin' });
+        if (!response.ok) throw new Error('DNS check unavailable');
+        const data = await response.json();
+        list.innerHTML = data.checks.map((check) => {
+          const state = ['connected', 'disconnected'].includes(check.status) ? check.status : 'unknown';
+          const label = state === 'connected' ? 'Connected' : state === 'disconnected' ? 'Disconnected' : 'Unable to verify';
+          return `<div class="dns-row"><div><strong>${safe(check.label)}</strong><small>${safe(check.detail)}</small></div><span class="dns-state ${state}">${label}</span></div>`;
+        }).join('');
+      } catch (error) {
+        list.textContent = 'Unable to check DNS records. Try again.';
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Refresh';
+      }
+    }
+    document.querySelector('#dns-refresh').addEventListener('click', loadDnsHealth);
     const mailboxList = document.querySelector('#mailbox-list');
     const activity = document.querySelector('.activity');
     const managerModal = document.querySelector('#manager-modal');
@@ -390,7 +427,7 @@ def page(domain: str) -> str:
         document.querySelector('#active-note').textContent = 'From Stalwart directory';
         document.querySelector('#storage-note').textContent = 'Live account usage';
         document.querySelector('#new-note').textContent = 'Created this month';
-        if (activity && !search) activity.innerHTML = accounts.length ? [...accounts].sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0)).slice(0, 3).map((account) => `<div class="activity-row"><span class="activity-icon">✓</span><div><p>${safe(account.emailAddress || account.name)}</p><small>${safe(account.description || 'No name')}</small></div><time>${account.createdAt ? safe(new Date(account.createdAt).toLocaleDateString()) : '—'}</time></div>`).join('') : '<div class="activity-row"><div><p>No mailboxes yet</p><small>Create your first mailbox above.</small></div></div>';
+        if (activity && !search) activity.innerHTML = accounts.length ? [...accounts].sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0)).slice(0, 5).map((account) => `<div class="activity-row"><span class="activity-icon">✓</span><div><p>${safe(account.emailAddress || account.name)}</p><small>${safe(account.description || 'No name')}</small></div><time>${account.createdAt ? safe(new Date(account.createdAt).toLocaleDateString()) : '—'}</time></div>`).join('') : '<div class="activity-row"><div><p>No mailboxes yet</p><small>Create your first mailbox above.</small></div></div>';
         mailboxList.innerHTML = accounts.length ? accountRows(accounts) : '<tr><td colspan="5"><div class="empty"><strong>No mailboxes found</strong>Try a different search.</div></td></tr>';
       } catch (error) { showToast(error.message); }
     }
@@ -483,6 +520,7 @@ def page(domain: str) -> str:
       document.querySelector('#mailbox-display-name').focus();
     });
     loadAccounts();
+    loadDnsHealth();
   </script>
 </body>
 </html>'''
@@ -582,6 +620,10 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.get("/", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
     async def home() -> HTMLResponse:
         return HTMLResponse(page(config.domain), headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/dns-health", dependencies=[Depends(require_admin)])
+    async def mail_dns_health() -> JSONResponse:
+        return JSONResponse({"checks": await check_dns_health(config.domain, config.dkim_selectors)}, headers={"Cache-Control": "no-store"})
 
     @app.post("/api/mailboxes", dependencies=[Depends(require_admin)])
     async def create_mailbox(request: Request) -> JSONResponse:
