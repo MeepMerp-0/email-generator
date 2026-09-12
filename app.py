@@ -239,7 +239,6 @@ def page(domain: str) -> str:
     .metric-value { display: block; margin: 15px 0 4px; font-size: 25px; letter-spacing: -.05em; }
     .metric-note { color: var(--muted); font-size: 11px; }
     .metric-note.ready { color: var(--accent-2); }
-    .lower-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .75fr); gap: 18px; }
     .panel { padding: 22px; }
     .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 20px; }
     .panel h2 { margin-bottom: 4px; font-size: 16px; letter-spacing: -.02em; }
@@ -252,12 +251,6 @@ def page(domain: str) -> str:
     .activity-row p { margin: 0; font-size: 13px; }
     .activity-row small { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
     .activity-row time { margin-left: auto; color: var(--muted); font-size: 11px; }
-    .actions { display: grid; gap: 9px; }
-    .action { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); background: rgba(255, 255, 255, .025); text-align: left; }
-    .action:hover { border-color: rgba(139, 124, 255, .55); background: rgba(139, 124, 255, .08); }
-    .action-icon { display: grid; width: 29px; height: 29px; place-items: center; border-radius: 8px; color: var(--accent); background: rgba(139, 124, 255, .12); }
-    .action strong { display: block; font-size: 12px; }
-    .action small { color: var(--muted); font-size: 11px; }
     .view { display: none; }
     .view.active { display: block; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; }
@@ -304,7 +297,7 @@ def page(domain: str) -> str:
     .credential { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
     .credential span { overflow-wrap: anywhere; color: #fff; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
     .copy { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: transparent; font-size: 10px; }
-    @media (max-width: 1100px) { .shell { grid-template-columns: 218px minmax(0, 1fr); } .content { padding-inline: clamp(18px, 3vw, 34px); } .hero, .lower-grid { grid-template-columns: 1fr; } .status-card { min-height: 0; } }
+    @media (max-width: 1100px) { .shell { grid-template-columns: 218px minmax(0, 1fr); } .content { padding-inline: clamp(18px, 3vw, 34px); } .hero { grid-template-columns: 1fr; } .status-card { min-height: 0; } }
     @media (max-width: 760px) { .shell { display: block; } .sidebar { gap: 16px; padding: 14px; border-right: 0; border-bottom: 1px solid var(--line); } nav { display: flex; overflow-x: auto; scrollbar-width: none; } nav::-webkit-scrollbar { display: none; } .nav-item { width: auto; white-space: nowrap; } .side-note { display: none; } .content { padding: 22px 14px 38px; } .topbar { align-items: center; margin-bottom: 22px; } .topbar h1 { font-size: 26px; } .lede { font-size: 13px; } .operator span { display: none; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; } .metric { padding: 14px; } .metric-value { font-size: 21px; } .settings-grid { grid-template-columns: 1fr; } .hero-card, .panel, .status-card { padding: 20px; } .toolbar { gap: 8px; } .search { flex-basis: 100%; } .search input, #refresh-accounts { width: 100%; } .table-wrap { margin-inline: -2px; } }
     @media (max-width: 420px) { .brand { padding-inline: 4px; } .brand-mark { width: 30px; height: 30px; } .nav-item { padding: 9px 10px; font-size: 12px; } .metrics { grid-template-columns: 1fr 1fr; } .metric-label { font-size: 11px; } .metric-note { font-size: 10px; } .hero-card h2 { font-size: 22px; } .btn { width: 100%; } .panel-head { flex-direction: column; } .panel-head .btn { width: 100%; } .row-actions { flex-wrap: wrap; } }
   </style>
@@ -341,8 +334,7 @@ def page(domain: str) -> str:
           <div class="card metric"><div class="metric-label">Service health <span>●</span></div><strong class="metric-value">Ready</strong><span class="metric-note ready">API is responding</span></div>
         </div>
         <div class="lower-grid">
-          <div class="card panel"><div class="panel-head"><div><h2>Recent activity</h2><p class="panel-subtitle">Provisioning events from this workspace</p></div><button class="text-link" data-placeholder="Activity history">View all</button></div><div class="activity"><div class="activity-row"><span class="activity-icon">＋</span><div><p>Mailbox activity will appear here</p><small>Connect a list endpoint to show history</small></div><time>—</time></div><div class="activity-row"><span class="activity-icon">✓</span><div><p>Admin session authenticated</p><small>Password-only access is enabled</small></div><time>Now</time></div></div></div>
-          <div class="card panel"><div class="panel-head"><div><h2>Operator actions</h2><p class="panel-subtitle">Common mailbox controls</p></div></div><div class="actions"><button class="action create" type="button"><span class="action-icon">＋</span><span><strong>Create mailbox</strong><small>Generate address and password</small></span></button><button class="action account-action" data-action="edit" type="button"><span class="action-icon">↗</span><span><strong>Edit mailbox</strong><small>Choose an account to edit</small></span></button><button class="action account-action" data-action="quota" type="button"><span class="action-icon">◒</span><span><strong>Quota policy</strong><small>Set an account storage limit</small></span></button><button class="action account-action" data-action="password" type="button"><span class="action-icon">⌁</span><span><strong>Password reset</strong><small>Rotate an account password</small></span></button></div></div>
+          <div class="card panel"><div class="panel-head"><div><h2>Recent mailboxes</h2><p class="panel-subtitle">Latest addresses in this workspace</p></div><button class="text-link" id="manage-mailboxes" type="button">Manage mailboxes</button></div><div class="activity" aria-live="polite"><div class="activity-row"><div><p>Loading mailboxes…</p></div></div></div></div>
         </div>
       </section>
 
@@ -370,7 +362,7 @@ def page(domain: str) -> str:
       document.querySelectorAll('.nav-item').forEach((nav) => nav.classList.toggle('active', nav === item));
       document.querySelectorAll('.view').forEach((view) => view.classList.toggle('active', view.dataset.section === item.dataset.view));
     }));
-    document.querySelectorAll('[data-placeholder]').forEach((button) => button.addEventListener('click', () => showToast(`${button.dataset.placeholder} will activate when its REST endpoint is available.`)));
+    document.querySelector('#manage-mailboxes').addEventListener('click', () => document.querySelector('[data-view="mailboxes"]').click());
     const mailboxList = document.querySelector('#mailbox-list');
     const activity = document.querySelector('.activity');
     const managerModal = document.querySelector('#manager-modal');
@@ -398,13 +390,12 @@ def page(domain: str) -> str:
         document.querySelector('#active-note').textContent = 'From Stalwart directory';
         document.querySelector('#storage-note').textContent = 'Live account usage';
         document.querySelector('#new-note').textContent = 'Created this month';
-        if (activity && accounts.length) activity.innerHTML = accounts.slice(0, 3).map((account) => `<div class="activity-row"><span class="activity-icon">✓</span><div><p>${safe(account.emailAddress || account.name)}</p><small>${safe(account.description || 'Mailbox account')}</small></div><time>${account.createdAt ? safe(new Date(account.createdAt).toLocaleDateString()) : '—'}</time></div>`).join('');
+        if (activity && !search) activity.innerHTML = accounts.length ? [...accounts].sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0)).slice(0, 3).map((account) => `<div class="activity-row"><span class="activity-icon">✓</span><div><p>${safe(account.emailAddress || account.name)}</p><small>${safe(account.description || 'No name')}</small></div><time>${account.createdAt ? safe(new Date(account.createdAt).toLocaleDateString()) : '—'}</time></div>`).join('') : '<div class="activity-row"><div><p>No mailboxes yet</p><small>Create your first mailbox above.</small></div></div>';
         mailboxList.innerHTML = accounts.length ? accountRows(accounts) : '<tr><td colspan="5"><div class="empty"><strong>No mailboxes found</strong>Try a different search.</div></td></tr>';
       } catch (error) { showToast(error.message); }
     }
     document.querySelector('#search').addEventListener('input', (event) => loadAccounts(event.target.value));
     document.querySelector('[data-view="mailboxes"]').addEventListener('click', () => loadAccounts());
-    document.querySelectorAll('.account-action').forEach((button) => button.addEventListener('click', () => { document.querySelector('[data-view="mailboxes"]').click(); showToast('Choose an account action from the mailbox directory.'); }));
     function closeManager() { managerModal.hidden = true; managerForm.reset(); selectedAccount = null; }
     function openManager(action, id) {
       selectedAccount = accountsById.get(id);
