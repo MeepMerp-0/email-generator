@@ -207,10 +207,11 @@ def page(domain: str) -> str:
     .hero { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; margin-bottom: 18px; }
     .card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: 0 18px 50px rgba(0, 0, 0, .12); }
     .hero-card { container-type: inline-size; padding: 30px; background: linear-gradient(120deg, rgba(56, 72, 150, .75), rgba(23, 35, 62, .86) 60%, rgba(22, 45, 68, .78)); }
-    .provision-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 430px); align-items: center; gap: clamp(24px, 4vw, 56px); min-height: 300px; }
+    .provision-layout { display: grid; grid-template-columns: minmax(0, 430px) minmax(0, 1fr); align-items: center; gap: clamp(24px, 4vw, 56px); min-height: 300px; }
+    .provision-intro { grid-column: 2; grid-row: 1; }
     .hero-card h2 { max-width: 490px; margin-bottom: 10px; font-size: clamp(21px, 2.5vw, 29px); line-height: 1.16; letter-spacing: -.035em; }
     .hero-card p { max-width: 520px; color: #b7c1d4; }
-    .provision-action { min-width: 0; padding: 24px; border: 1px solid rgba(148, 163, 184, .19); border-radius: 16px; background: rgba(8, 17, 34, .3); }
+    .provision-action { grid-column: 1; grid-row: 1; min-width: 0; padding: 24px; border: 1px solid rgba(148, 163, 184, .19); border-radius: 16px; background: rgba(8, 17, 34, .3); }
     .provision-form { display: grid; gap: 18px; }
     .provision-field { display: grid; gap: 8px; }
     .provision-form label { color: #dbe3f4; font-size: 12px; font-weight: 700; }
@@ -220,7 +221,7 @@ def page(domain: str) -> str:
     .mailbox-address .mailbox-name { flex: 1; min-width: 0; border: 0; background: transparent; }
     .mailbox-address span { padding-right: 13px; color: var(--muted); font-size: 13px; white-space: nowrap; }
     .provision-form .btn { width: 100%; min-height: 44px; margin-top: 2px; }
-    @container (max-width: 760px) { .provision-layout { grid-template-columns: 1fr; gap: 20px; min-height: 0; } }
+    @container (max-width: 760px) { .provision-layout { grid-template-columns: 1fr; gap: 20px; min-height: 0; } .provision-intro, .provision-action { grid-column: 1; grid-row: auto; } }
     @container (max-width: 480px) { .provision-action { padding: 18px; } .mailbox-address { display: block; } .mailbox-address span { display: block; padding: 0 13px 10px; } }
     .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 41px; padding: 0 16px; border: 1px solid transparent; border-radius: 10px; color: #fff; background: var(--accent); font-weight: 700; transition: transform .2s, background .2s; }
     .btn:hover { transform: translateY(-1px); background: #9b8eff; }
