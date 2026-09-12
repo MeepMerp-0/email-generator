@@ -112,17 +112,20 @@ def load_config() -> Config:
     )
 
 
-def new_mailbox() -> tuple[str, str]:
-    return f"icr-{secrets.token_hex(6)}", base64.urlsafe_b64encode(secrets.token_bytes(24)).rstrip(b"=").decode()
+def new_password() -> str:
+    return base64.urlsafe_b64encode(secrets.token_bytes(24)).rstrip(b"=").decode()
 
 
-async def provision(config: Config, requested_name: str = "", display_name: str = "") -> dict[str, str]:
+async def provision(config: Config, mailbox_address: str = "", display_name: str = "") -> dict[str, str]:
     if not config.configured:
         raise RuntimeError("service_not_configured")
-    name = requested_name.strip().lower() or new_mailbox()[0]
+    name = mailbox_address.strip().lower()
+    display_name = display_name.strip()
+    if not name or not display_name:
+        raise ValueError("name_and_mailbox_address_required")
     if not re.fullmatch(r"[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?", name):
         raise ValueError("invalid_mailbox_name")
-    password = new_mailbox()[1]
+    password = new_password()
     account = {
         "@type": "User", "name": name, "domainId": config.domain_id,
         "aliases": {},
@@ -130,8 +133,7 @@ async def provision(config: Config, requested_name: str = "", display_name: str 
         "encryptionAtRest": {"@type": "Disabled"}, "memberGroupIds": {},
         "permissions": {"@type": "Inherit"}, "quotas": {}, "roles": {"@type": "User"},
     }
-    if display_name := display_name.strip():
-        account["description"] = display_name[:200]
+    account["description"] = display_name[:200]
     payload = {
         "using": ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"],
         "methodCalls": [["x:Account/set", {"create": {"mailbox": account}}, "mailbox-create"]],
@@ -204,12 +206,17 @@ def page(domain: str) -> str:
     .avatar { display: grid; width: 35px; height: 35px; place-items: center; border: 1px solid rgba(139, 124, 255, .45); border-radius: 50%; color: #fff; background: #1c2a48; font-weight: 700; }
     .hero { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; margin-bottom: 18px; }
     .card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: 0 18px 50px rgba(0, 0, 0, .12); }
-    .hero-card { position: relative; overflow: hidden; min-height: 224px; padding: 30px; background: linear-gradient(120deg, rgba(56, 72, 150, .75), rgba(23, 35, 62, .86) 60%, rgba(22, 45, 68, .78)); }
+    .hero-card { position: relative; overflow: hidden; min-height: 310px; padding: 30px; background: linear-gradient(120deg, rgba(56, 72, 150, .75), rgba(23, 35, 62, .86) 60%, rgba(22, 45, 68, .78)); }
     .hero-card::after { position: absolute; right: -40px; bottom: -95px; width: 300px; height: 300px; border: 1px solid rgba(94, 234, 212, .18); border-radius: 50%; box-shadow: 0 0 0 32px rgba(94, 234, 212, .04), 0 0 0 64px rgba(94, 234, 212, .03); content: ""; }
     .hero-card h2 { max-width: 490px; margin-bottom: 10px; font-size: clamp(21px, 2.5vw, 29px); line-height: 1.16; letter-spacing: -.035em; }
     .hero-card p { max-width: 520px; margin-bottom: 24px; color: #b7c1d4; }
-    .mailbox-name { width: min(100%, 360px); height: 41px; margin-bottom: 12px; padding: 0 13px; border: 1px solid var(--line); border-radius: 10px; outline: 0; color: var(--ink); background: rgba(255, 255, 255, .04); }
+    .provision-form { position: relative; z-index: 1; display: grid; gap: 9px; width: min(100%, 430px); }
+    .provision-form label { color: #dbe3f4; font-size: 12px; font-weight: 700; }
+    .mailbox-name { box-sizing: border-box; width: 100%; height: 41px; padding: 0 13px; border: 1px solid var(--line); border-radius: 10px; outline: 0; color: var(--ink); background: rgba(255, 255, 255, .04); }
     .mailbox-name:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(139, 124, 255, .14); }
+    .mailbox-address { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, .04); }
+    .mailbox-address .mailbox-name { border: 0; background: transparent; }
+    .mailbox-address span { padding-right: 13px; color: var(--muted); font-size: 13px; white-space: nowrap; }
     .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 41px; padding: 0 16px; border: 1px solid transparent; border-radius: 10px; color: #fff; background: var(--accent); font-weight: 700; transition: transform .2s, background .2s; }
     .btn:hover { transform: translateY(-1px); background: #9b8eff; }
     .btn.secondary { border-color: var(--line); color: var(--ink); background: rgba(255, 255, 255, .04); }
@@ -293,7 +300,7 @@ def page(domain: str) -> str:
     .copy { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: transparent; font-size: 10px; }
     @media (max-width: 1100px) { .shell { grid-template-columns: 218px minmax(0, 1fr); } .content { padding-inline: clamp(18px, 3vw, 34px); } .hero, .lower-grid { grid-template-columns: 1fr; } .status-card { min-height: 0; } }
     @media (max-width: 760px) { .shell { display: block; } .sidebar { gap: 16px; padding: 14px; border-right: 0; border-bottom: 1px solid var(--line); } nav { display: flex; overflow-x: auto; scrollbar-width: none; } nav::-webkit-scrollbar { display: none; } .nav-item { width: auto; white-space: nowrap; } .side-note { display: none; } .content { padding: 22px 14px 38px; } .topbar { align-items: center; margin-bottom: 22px; } .topbar h1 { font-size: 26px; } .lede { font-size: 13px; } .operator span { display: none; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; } .metric { padding: 14px; } .metric-value { font-size: 21px; } .settings-grid { grid-template-columns: 1fr; } .hero-card, .panel, .status-card { padding: 20px; } .toolbar { gap: 8px; } .search { flex-basis: 100%; } .search input, #refresh-accounts { width: 100%; } .table-wrap { margin-inline: -2px; } }
-    @media (max-width: 420px) { .brand { padding-inline: 4px; } .brand-mark { width: 30px; height: 30px; } .nav-item { padding: 9px 10px; font-size: 12px; } .metrics { grid-template-columns: 1fr 1fr; } .metric-label { font-size: 11px; } .metric-note { font-size: 10px; } .hero-card h2 { font-size: 22px; } .btn { width: 100%; } .mailbox-name { width: 100%; } .panel-head { flex-direction: column; } .panel-head .btn { width: 100%; } .row-actions { flex-wrap: wrap; } }
+    @media (max-width: 420px) { .brand { padding-inline: 4px; } .brand-mark { width: 30px; height: 30px; } .nav-item { padding: 9px 10px; font-size: 12px; } .metrics { grid-template-columns: 1fr 1fr; } .metric-label { font-size: 11px; } .metric-note { font-size: 10px; } .hero-card h2 { font-size: 22px; } .btn { width: 100%; } .panel-head { flex-direction: column; } .panel-head .btn { width: 100%; } .row-actions { flex-wrap: wrap; } }
   </style>
 </head>
 <body>
@@ -318,7 +325,7 @@ def page(domain: str) -> str:
 
       <section class="view active" data-section="dashboard">
         <div class="hero">
-          <div class="card hero-card"><p class="kicker">Provisioning</p><h2>Give every conversation a proper home.</h2><p>Create a mailbox with your chosen address or leave it blank for a generated one.</p><label for="mailbox-name" class="sr-only">Mailbox address</label><input id="mailbox-name" class="mailbox-name" placeholder="Mailbox address (optional)" autocomplete="off" maxlength="64"><label for="mailbox-display-name" class="sr-only">Mailbox name</label><input id="mailbox-display-name" class="mailbox-name" placeholder="Name (optional)" autocomplete="name" maxlength="200"><button class="btn create" type="button"><span>＋</span> Create mailbox</button><div class="result" aria-live="polite"></div></div>
+          <div class="card hero-card"><p class="kicker">Provisioning</p><h2>Give every conversation a proper home.</h2><p>Create a mailbox for a team member.</p><form class="provision-form" id="provision-form"><label for="mailbox-display-name">Name *</label><input id="mailbox-display-name" class="mailbox-name" placeholder="Full name" autocomplete="name" maxlength="200" required><label for="mailbox-name">Mailbox address *</label><div class="mailbox-address"><input id="mailbox-name" class="mailbox-name" placeholder="name" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="64" required><span>@__DOMAIN__</span></div><button class="btn create" type="submit"><span>＋</span> Create mailbox</button></form><div class="result" aria-live="polite"></div></div>
           <div class="card status-card"><div class="status-head"><h3>Service status</h3><span class="pulse" aria-label="Operational"></span></div><strong>Provisioning ready</strong><span>Connected to the admin service</span><hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><span>Default domain</span><strong style="font-size:14px;margin-top:5px;overflow-wrap:anywhere">__DOMAIN__</strong></div>
         </div>
         <div class="metrics">
@@ -456,16 +463,16 @@ def page(domain: str) -> str:
         if (action !== 'password') showToast('Mailbox updated.');
       } catch (error) { showToast(error.message); }
     });
-    document.querySelectorAll('.create').forEach((button) => button.addEventListener('click', async () => {
-      if (!button.closest('[data-section="dashboard"]')) document.querySelector('.nav-item[data-view="dashboard"]').click();
+    document.querySelector('#provision-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
       const result = document.querySelector('.result');
       document.querySelectorAll('.create').forEach((item) => { item.disabled = true; });
       result.classList.add('show');
       result.textContent = 'Creating mailbox…';
         try {
-        const requestedName = document.querySelector('#mailbox-name').value.trim();
         const displayName = document.querySelector('#mailbox-display-name').value.trim();
-        const response = await fetch('/api/mailboxes', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ name: requestedName, displayName }) });
+        const mailboxAddress = document.querySelector('#mailbox-name').value.trim();
+        const response = await fetch('/api/mailboxes', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ name: displayName, mailboxAddress }) });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || 'Unable to create mailbox.');
         result.innerHTML = `<p>Save these credentials now. The password is not stored here.</p><div class="credential"><span>${data.email}</span><button class="copy" data-copy="${data.email}" type="button">Copy</button></div><div class="credential"><span>${data.password}</span><button class="copy" data-copy="${data.password}" type="button">Copy</button></div>`;
@@ -473,7 +480,11 @@ def page(domain: str) -> str:
         showToast('Mailbox created successfully.');
       } catch (error) { result.textContent = error.message; showToast('Mailbox creation failed.'); }
       finally { document.querySelectorAll('.create').forEach((item) => { item.disabled = false; }); }
-    }));
+    });
+    document.querySelector('.panel-head .create').addEventListener('click', () => {
+      document.querySelector('.nav-item[data-view="dashboard"]').click();
+      document.querySelector('#mailbox-display-name').focus();
+    });
     loadAccounts();
   </script>
 </body>
@@ -581,11 +592,11 @@ def create_app(config: Config | None = None) -> FastAPI:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="origin_not_allowed")
         try:
             payload = await request.json()
-            requested_name = str(payload.get("name", "")) if isinstance(payload, dict) else ""
-            display_name = str(payload.get("displayName", "")) if isinstance(payload, dict) else ""
-            created = await provision(config, requested_name, display_name)
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid_mailbox_name") from None
+            display_name = str(payload.get("name", "")) if isinstance(payload, dict) else ""
+            mailbox_address = str(payload.get("mailboxAddress", "")) if isinstance(payload, dict) else ""
+            created = await provision(config, mailbox_address, display_name)
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from None
         except Exception:
             logger.error("Mailbox provisioning failed")
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="mailbox_creation_failed") from None

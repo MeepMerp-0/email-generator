@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from app import Config, FailedAuthLockout, SlidingWindowRateLimiter, create_app, new_mailbox, page
+from app import Config, FailedAuthLockout, SlidingWindowRateLimiter, create_app, new_password, page
 
 
 class MailboxGeneratorTest(unittest.TestCase):
@@ -11,9 +11,8 @@ class MailboxGeneratorTest(unittest.TestCase):
         self.config = Config("admin", "password", "example.test", "domain", "https://mail.example.test/jmap/", "token", "https://admin.example.test")
         self.client = TestClient(create_app(self.config), base_url="https://testserver")
 
-    def test_random_mailbox_has_expected_shape(self) -> None:
-        name, password = new_mailbox()
-        self.assertRegex(name, r"^icr-[a-f0-9]{12}$")
+    def test_generated_password_has_expected_shape(self) -> None:
+        password = new_password()
         self.assertRegex(password, r"^[A-Za-z0-9_-]{32}$")
 
     def test_post_requires_matching_origin(self) -> None:
@@ -21,16 +20,23 @@ class MailboxGeneratorTest(unittest.TestCase):
         response = self.client.post("/api/mailboxes", headers={"Origin": "https://wrong.example.test"})
         self.assertEqual(response.status_code, 403)
 
-    def test_create_mailbox_saves_the_optional_name(self) -> None:
+    def test_create_mailbox_requires_and_saves_name_and_address(self) -> None:
         self.client.post("/login", data={"password": "password"})
         with patch("app.provision", new_callable=AsyncMock, return_value={"email": "alex@example.test", "password": "generated"}) as provision:
-            response = self.client.post("/api/mailboxes", headers={"Origin": "https://admin.example.test"}, json={"name": "alex", "displayName": "Alex Smith"})
+            response = self.client.post("/api/mailboxes", headers={"Origin": "https://admin.example.test"}, json={"name": "Alex Smith", "mailboxAddress": "alex"})
         self.assertEqual(response.status_code, 201)
         provision.assert_awaited_once_with(self.config, "alex", "Alex Smith")
+
+    def test_create_mailbox_rejects_missing_required_fields(self) -> None:
+        self.client.post("/login", data={"password": "password"})
+        response = self.client.post("/api/mailboxes", headers={"Origin": "https://admin.example.test"}, json={"name": "", "mailboxAddress": ""})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"], "name_and_mailbox_address_required")
 
     def test_mailbox_ui_uses_name_labels(self) -> None:
         rendered = page("example.test")
         self.assertIn('id="mailbox-display-name"', rendered)
+        self.assertIn('@example.test', rendered)
         self.assertIn("No name", rendered)
 
     def test_missing_credentials_redirects_to_password_login(self) -> None:
