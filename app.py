@@ -206,17 +206,22 @@ def page(domain: str) -> str:
     .avatar { display: grid; width: 35px; height: 35px; place-items: center; border: 1px solid rgba(139, 124, 255, .45); border-radius: 50%; color: #fff; background: #1c2a48; font-weight: 700; }
     .hero { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; margin-bottom: 18px; }
     .card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: 0 18px 50px rgba(0, 0, 0, .12); }
-    .hero-card { position: relative; overflow: hidden; min-height: 310px; padding: 30px; background: linear-gradient(120deg, rgba(56, 72, 150, .75), rgba(23, 35, 62, .86) 60%, rgba(22, 45, 68, .78)); }
-    .hero-card::after { position: absolute; right: -40px; bottom: -95px; width: 300px; height: 300px; border: 1px solid rgba(94, 234, 212, .18); border-radius: 50%; box-shadow: 0 0 0 32px rgba(94, 234, 212, .04), 0 0 0 64px rgba(94, 234, 212, .03); content: ""; }
+    .hero-card { container-type: inline-size; padding: 30px; background: linear-gradient(120deg, rgba(56, 72, 150, .75), rgba(23, 35, 62, .86) 60%, rgba(22, 45, 68, .78)); }
+    .provision-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 430px); align-items: center; gap: clamp(24px, 4vw, 56px); min-height: 300px; }
     .hero-card h2 { max-width: 490px; margin-bottom: 10px; font-size: clamp(21px, 2.5vw, 29px); line-height: 1.16; letter-spacing: -.035em; }
-    .hero-card p { max-width: 520px; margin-bottom: 24px; color: #b7c1d4; }
-    .provision-form { position: relative; z-index: 1; display: grid; gap: 9px; width: min(100%, 430px); }
+    .hero-card p { max-width: 520px; color: #b7c1d4; }
+    .provision-action { min-width: 0; padding: 24px; border: 1px solid rgba(148, 163, 184, .19); border-radius: 16px; background: rgba(8, 17, 34, .3); }
+    .provision-form { display: grid; gap: 18px; }
+    .provision-field { display: grid; gap: 8px; }
     .provision-form label { color: #dbe3f4; font-size: 12px; font-weight: 700; }
-    .mailbox-name { box-sizing: border-box; width: 100%; height: 41px; padding: 0 13px; border: 1px solid var(--line); border-radius: 10px; outline: 0; color: var(--ink); background: rgba(255, 255, 255, .04); }
+    .mailbox-name { width: 100%; height: 44px; padding: 0 13px; border: 1px solid var(--line); border-radius: 10px; outline: 0; color: var(--ink); background: rgba(255, 255, 255, .04); }
     .mailbox-name:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(139, 124, 255, .14); }
     .mailbox-address { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; background: rgba(255, 255, 255, .04); }
-    .mailbox-address .mailbox-name { border: 0; background: transparent; }
+    .mailbox-address .mailbox-name { flex: 1; min-width: 0; border: 0; background: transparent; }
     .mailbox-address span { padding-right: 13px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+    .provision-form .btn { width: 100%; min-height: 44px; margin-top: 2px; }
+    @container (max-width: 760px) { .provision-layout { grid-template-columns: 1fr; gap: 20px; min-height: 0; } }
+    @container (max-width: 480px) { .provision-action { padding: 18px; } .mailbox-address { display: block; } .mailbox-address span { display: block; padding: 0 13px 10px; } }
     .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 41px; padding: 0 16px; border: 1px solid transparent; border-radius: 10px; color: #fff; background: var(--accent); font-weight: 700; transition: transform .2s, background .2s; }
     .btn:hover { transform: translateY(-1px); background: #9b8eff; }
     .btn.secondary { border-color: var(--line); color: var(--ink); background: rgba(255, 255, 255, .04); }
@@ -325,7 +330,7 @@ def page(domain: str) -> str:
 
       <section class="view active" data-section="dashboard">
         <div class="hero">
-          <div class="card hero-card"><p class="kicker">Provisioning</p><h2>Give every conversation a proper home.</h2><p>Create a mailbox for a team member.</p><form class="provision-form" id="provision-form"><label for="mailbox-display-name">Name *</label><input id="mailbox-display-name" class="mailbox-name" placeholder="Full name" autocomplete="name" maxlength="200" required><label for="mailbox-name">Mailbox address *</label><div class="mailbox-address"><input id="mailbox-name" class="mailbox-name" placeholder="name" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="64" required><span>@__DOMAIN__</span></div><button class="btn create" type="submit"><span>＋</span> Create mailbox</button></form><div class="result" aria-live="polite"></div></div>
+          <div class="card hero-card"><div class="provision-layout"><div class="provision-intro"><p class="kicker">Provisioning</p><h2>Give every conversation a proper home.</h2><p>Create a mailbox for a team member.</p></div><div class="provision-action"><form class="provision-form" id="provision-form"><div class="provision-field"><label for="mailbox-display-name">Name *</label><input id="mailbox-display-name" class="mailbox-name" placeholder="Full name" autocomplete="name" maxlength="200" required></div><div class="provision-field"><label for="mailbox-name">Mailbox address *</label><div class="mailbox-address"><input id="mailbox-name" class="mailbox-name" placeholder="name" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="64" required><span>@__DOMAIN__</span></div></div><button class="btn create" type="submit"><span aria-hidden="true">＋</span> Create mailbox</button></form><div class="result" aria-live="polite"></div></div></div></div>
           <div class="card status-card"><div class="status-head"><h3>Service status</h3><span class="pulse" aria-label="Operational"></span></div><strong>Provisioning ready</strong><span>Connected to the admin service</span><hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><span>Default domain</span><strong style="font-size:14px;margin-top:5px;overflow-wrap:anywhere">__DOMAIN__</strong></div>
         </div>
         <div class="metrics">
