@@ -116,22 +116,25 @@ def new_mailbox() -> tuple[str, str]:
     return f"icr-{secrets.token_hex(6)}", base64.urlsafe_b64encode(secrets.token_bytes(24)).rstrip(b"=").decode()
 
 
-async def provision(config: Config, requested_name: str = "") -> dict[str, str]:
+async def provision(config: Config, requested_name: str = "", display_name: str = "") -> dict[str, str]:
     if not config.configured:
         raise RuntimeError("service_not_configured")
     name = requested_name.strip().lower() or new_mailbox()[0]
     if not re.fullmatch(r"[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?", name):
         raise ValueError("invalid_mailbox_name")
     password = new_mailbox()[1]
+    account = {
+        "@type": "User", "name": name, "domainId": config.domain_id,
+        "aliases": {},
+        "credentials": {"0": {"@type": "Password", "secret": password, "allowedIps": {}}},
+        "encryptionAtRest": {"@type": "Disabled"}, "memberGroupIds": {},
+        "permissions": {"@type": "Inherit"}, "quotas": {}, "roles": {"@type": "User"},
+    }
+    if display_name := display_name.strip():
+        account["description"] = display_name[:200]
     payload = {
         "using": ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"],
-        "methodCalls": [["x:Account/set", {"create": {"mailbox": {
-            "@type": "User", "name": name, "domainId": config.domain_id,
-            "aliases": {},
-            "credentials": {"0": {"@type": "Password", "secret": password, "allowedIps": {}}},
-            "encryptionAtRest": {"@type": "Disabled"}, "memberGroupIds": {},
-            "permissions": {"@type": "Inherit"}, "quotas": {}, "roles": {"@type": "User"},
-        }}}, "mailbox-create"]],
+        "methodCalls": [["x:Account/set", {"create": {"mailbox": account}}, "mailbox-create"]],
     }
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.post(config.jmap_url, headers={"Authorization": f"Bearer {config.api_key}"}, json=payload)
@@ -315,7 +318,7 @@ def page(domain: str) -> str:
 
       <section class="view active" data-section="dashboard">
         <div class="hero">
-          <div class="card hero-card"><p class="kicker">Provisioning</p><h2>Give every conversation a proper home.</h2><p>Create a mailbox with your chosen address or leave it blank for a generated one.</p><label for="mailbox-name" class="sr-only">Mailbox name</label><input id="mailbox-name" class="mailbox-name" placeholder="name (optional)" autocomplete="off" maxlength="64"><button class="btn create" type="button"><span>＋</span> Create mailbox</button><div class="result" aria-live="polite"></div></div>
+          <div class="card hero-card"><p class="kicker">Provisioning</p><h2>Give every conversation a proper home.</h2><p>Create a mailbox with your chosen address or leave it blank for a generated one.</p><label for="mailbox-name" class="sr-only">Mailbox address</label><input id="mailbox-name" class="mailbox-name" placeholder="Mailbox address (optional)" autocomplete="off" maxlength="64"><label for="mailbox-display-name" class="sr-only">Mailbox name</label><input id="mailbox-display-name" class="mailbox-name" placeholder="Name (optional)" autocomplete="name" maxlength="200"><button class="btn create" type="button"><span>＋</span> Create mailbox</button><div class="result" aria-live="polite"></div></div>
           <div class="card status-card"><div class="status-head"><h3>Service status</h3><span class="pulse" aria-label="Operational"></span></div><strong>Provisioning ready</strong><span>Connected to the admin service</span><hr style="border:0;border-top:1px solid var(--line);margin:22px 0"><span>Default domain</span><strong style="font-size:14px;margin-top:5px;overflow-wrap:anywhere">__DOMAIN__</strong></div>
         </div>
         <div class="metrics">
@@ -366,7 +369,7 @@ def page(domain: str) -> str:
     let selectedAccount;
     let accountsById = new Map();
     const safe = (value) => String(value ?? '—').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-    const accountRows = (accounts) => accounts.map((account) => `<tr><td><strong>${safe(account.emailAddress || account.name)}</strong><br><small style="color:var(--muted)">${safe(account.description || 'No description')}</small></td><td><span class="tag">Active</span></td><td>${account.quotas?.maxDiskQuota ? Math.round(account.quotas.maxDiskQuota / 1048576) + ' MB' : 'Default'}</td><td>${account.createdAt ? safe(new Date(account.createdAt).toLocaleDateString()) : '—'}</td><td><div class="row-actions"><button class="table-action manage-account" data-action="edit" data-id="${safe(account.id)}" type="button">Edit</button><button class="table-action manage-account" data-action="quota" data-id="${safe(account.id)}" type="button">Quota</button><button class="table-action manage-account" data-action="password" data-id="${safe(account.id)}" type="button">Password</button><button class="table-action manage-account" data-action="delete" data-id="${safe(account.id)}" type="button">Delete</button></div></td></tr>`).join('');
+    const accountRows = (accounts) => accounts.map((account) => `<tr><td><strong>${safe(account.emailAddress || account.name)}</strong><br><small style="color:var(--muted)">${safe(account.description || 'No name')}</small></td><td><span class="tag">Active</span></td><td>${account.quotas?.maxDiskQuota ? Math.round(account.quotas.maxDiskQuota / 1048576) + ' MB' : 'Default'}</td><td>${account.createdAt ? safe(new Date(account.createdAt).toLocaleDateString()) : '—'}</td><td><div class="row-actions"><button class="table-action manage-account" data-action="edit" data-id="${safe(account.id)}" type="button">Edit</button><button class="table-action manage-account" data-action="quota" data-id="${safe(account.id)}" type="button">Quota</button><button class="table-action manage-account" data-action="password" data-id="${safe(account.id)}" type="button">Password</button><button class="table-action manage-account" data-action="delete" data-id="${safe(account.id)}" type="button">Delete</button></div></td></tr>`).join('');
     async function loadAccounts(search = '') {
       try {
         const response = await fetch('/api/accounts?search=' + encodeURIComponent(search), { credentials: 'same-origin' });
@@ -461,7 +464,8 @@ def page(domain: str) -> str:
       result.textContent = 'Creating mailbox…';
         try {
         const requestedName = document.querySelector('#mailbox-name').value.trim();
-        const response = await fetch('/api/mailboxes', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ name: requestedName }) });
+        const displayName = document.querySelector('#mailbox-display-name').value.trim();
+        const response = await fetch('/api/mailboxes', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ name: requestedName, displayName }) });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || 'Unable to create mailbox.');
         result.innerHTML = `<p>Save these credentials now. The password is not stored here.</p><div class="credential"><span>${data.email}</span><button class="copy" data-copy="${data.email}" type="button">Copy</button></div><div class="credential"><span>${data.password}</span><button class="copy" data-copy="${data.password}" type="button">Copy</button></div>`;
@@ -578,7 +582,8 @@ def create_app(config: Config | None = None) -> FastAPI:
         try:
             payload = await request.json()
             requested_name = str(payload.get("name", "")) if isinstance(payload, dict) else ""
-            created = await provision(config, requested_name)
+            display_name = str(payload.get("displayName", "")) if isinstance(payload, dict) else ""
+            created = await provision(config, requested_name, display_name)
         except ValueError:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="invalid_mailbox_name") from None
         except Exception:

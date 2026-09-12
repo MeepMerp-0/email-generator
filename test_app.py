@@ -1,8 +1,9 @@
 import unittest
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from app import Config, FailedAuthLockout, SlidingWindowRateLimiter, create_app, new_mailbox
+from app import Config, FailedAuthLockout, SlidingWindowRateLimiter, create_app, new_mailbox, page
 
 
 class MailboxGeneratorTest(unittest.TestCase):
@@ -19,6 +20,18 @@ class MailboxGeneratorTest(unittest.TestCase):
         self.client.post("/login", data={"password": "password"})
         response = self.client.post("/api/mailboxes", headers={"Origin": "https://wrong.example.test"})
         self.assertEqual(response.status_code, 403)
+
+    def test_create_mailbox_saves_the_optional_name(self) -> None:
+        self.client.post("/login", data={"password": "password"})
+        with patch("app.provision", new_callable=AsyncMock, return_value={"email": "alex@example.test", "password": "generated"}) as provision:
+            response = self.client.post("/api/mailboxes", headers={"Origin": "https://admin.example.test"}, json={"name": "alex", "displayName": "Alex Smith"})
+        self.assertEqual(response.status_code, 201)
+        provision.assert_awaited_once_with(self.config, "alex", "Alex Smith")
+
+    def test_mailbox_ui_uses_name_labels(self) -> None:
+        rendered = page("example.test")
+        self.assertIn('id="mailbox-display-name"', rendered)
+        self.assertIn("No name", rendered)
 
     def test_missing_credentials_redirects_to_password_login(self) -> None:
         response = self.client.get("/", follow_redirects=False)
